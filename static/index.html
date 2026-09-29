@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kokoro Studio — Text to Speech</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <svg class="logo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z" fill="currentColor" stroke="none"/>
+        <path d="M19 10v1a7 7 0 0 1-14 0v-1M12 18v4"/>
+      </svg>
+      <span>Kokoro <b>Studio</b></span>
+    </div>
+    <span class="badge">54 voices · offline</span>
+    <button id="theme-toggle" class="icon-btn" aria-label="Toggle theme">
+      <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4m11.4-11.4 1.4-1.4"/></svg>
+      <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+    </button>
+  </header>
+
+  <main class="layout">
+    <section class="card">
+      <div class="card-head">
+        <h2><span class="step">1</span> Your script</h2>
+        <div class="head-actions">
+          <button id="sample-btn" class="link-btn">Try a sample</button>
+          <button id="clear-btn" class="link-btn">Clear</button>
+        </div>
+      </div>
+      <div id="dropzone" tabindex="0" aria-label="Upload a text file">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5M12 3v12"/></svg>
+        <p>Drop a <b>.txt</b> file here, or <button id="browse-btn" class="link-btn">browse</button></p>
+      </div>
+      <textarea id="script" rows="8" placeholder="Paste or type your script here…" maxlength="8000" spellcheck="false"></textarea>
+      <div class="meta-row">
+        <span id="counter">0 chars · 0 words</span>
+        <span id="drop-hint" class="hint"></span>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2><span class="step">2</span> Pick a voice</h2>
+        <input id="voice-search" type="search" placeholder="Search voices…" aria-label="Search voices">
+      </div>
+      <div id="lang-tabs" class="tabs" role="tablist"></div>
+      <div id="voice-grid" class="voice-grid" aria-live="polite"></div>
+    </section>
+
+    <section id="result" class="card result hidden">
+      <div class="card-head">
+        <h2><span class="step">3</span> Your audio</h2>
+        <span id="result-meta" class="hint"></span>
+      </div>
+      <div class="result-row">
+        <audio id="player" controls></audio>
+        <a id="download" class="btn-secondary" download>Download WAV</a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="genbar">
+    <div id="voice-chip" class="chip">No voice selected</div>
+    <div class="speed-box">
+      <label for="speed">Speed</label>
+      <input id="speed" type="range" min="0.5" max="2" step="0.05" value="1">
+      <span id="speed-val">1.00×</span>
+    </div>
+    <button id="generate" class="btn-primary" disabled>
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m5 3 14 9-14 9V3z" fill="currentColor" stroke="none"/></svg>
+      <span class="btn-label">Generate audio</span>
+    </button>
+  </footer>
+
+  <div id="toasts" aria-live="assertive"></div>
+  <input type="file" id="file-input" accept=".txt,text/plain" hidden>
+  <script src="app.js"></script>
+</body>
+</html>

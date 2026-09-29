@@ -1,0 +1,23 @@
+# Model weights — download with `python download_models.py`
+*.onnx
+*.bin
+
+# Runtime output
+cache/
+audio_out/
+server.log
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.python-version
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Demo output from test_kokoro.py
+funny_*.wav
