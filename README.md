@@ -3,7 +3,7 @@
 A fast, offline text-to-speech web studio with **two engines** powered by open-source models. Paste or upload a script, audition voices, and generate studio-ready WAV audio — all on your own machine.
 
 - **Kokoro 82M** — 54 voices across 9 languages, real-time on CPU ([hexgrad/Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M))
-- **Qwen3-TTS 0.6B (CustomVoice)** — 9 expressive speakers, 10 languages, natural-language **style instructions** ("speak in a very angry tone") ([QwenLM/Qwen3-TTS](https://github.com/QwenLM/Qwen3-TTS)). *Optional — requires an NVIDIA GPU to be practical; auto-hidden otherwise.*
+- **Gemini TTS (`gemini-3.8-flash-tts`, cloud)** — **2,089 voices across 30 locales** with natural-language **style instructions** ("say it like a sports commentator"). Needs a free API key in `.env`; auto-disabled without one ([Gemini API](https://ai.google.dev/gemini-api/docs/speech-generation))
 
 ## Features
 
@@ -33,18 +33,19 @@ python -m uvicorn app:app --host 127.0.0.1 --port 8000
 
 Open **http://127.0.0.1:8000** in your browser.
 
-### About the Qwen3-TTS engine
+### About the Gemini TTS engine (cloud)
 
-Qwen3-TTS runs through PyTorch and is **only practical on an NVIDIA GPU**:
+Uses Google's `gemini-3.8-flash-tts` via the Gemini API. Setup:
 
-- **NVIDIA GPU** — install the CUDA build of torch, then start the server with `QWEN_ENABLED=1`:
-  ```bash
-  pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu126
-  QWEN_ENABLED=1 python -m uvicorn app:app --host 127.0.0.1 --port 8000
-  ```
-- **CPU / AMD GPUs (Windows)** — PyTorch has no CUDA support here; we measured ~250x real-time on a modern laptop CPU (bf16 emulation), i.e. a 10-second clip takes ~45 minutes, and DirectML (AMD) crashes on this model. The engine is therefore **shown greyed out** unless you explicitly set `QWEN_ENABLED=1`. Kokoro remains the default engine and is real-time everywhere.
+1. Get a free key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
+2. Copy `.env.example` to `.env` and paste your key
+3. Restart the server
 
-The Qwen3 model (~2.5 GB) downloads from Hugging Face on first use.
+The full voice catalog (2,089 voices / 30 locales) is fetched from Google's voice library and cached locally for 7 days (`cache/gemini_voices.json`). Free tier has daily quotas; paid tier costs ~$10 per 1M audio tokens (a short clip is a fraction of a cent).
+
+### About the Qwen3-TTS engine (local, optional)
+
+Qwen3-TTS runs locally through PyTorch and is **only practical on an NVIDIA GPU**. On machines without one it is shown greyed out (measured ~250x real-time on CPU; DirectML is unstable with this model). Set `QWEN_ENABLED=1` to force it on.
 
 ### Sanity check (optional)
 

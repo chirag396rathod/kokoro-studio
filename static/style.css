@@ -259,6 +259,26 @@ button { font: inherit; color: inherit; }
   font-weight: 600;
 }
 
+.lang-select {
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.lang-select:focus { border-color: var(--accent); outline: none; }
+
+.grid-note {
+  grid-column: 1 / -1;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--muted);
+  padding: 10px;
+}
+
 .voice-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(152px, 1fr));

@@ -195,6 +195,24 @@ async function loadVoices() {
 function renderTabs() {
   const voices = curEngine().voices;
   const langs = ["all", ...new Set(voices.map((v) => v.lang))];
+  if (langs.length > 12) {
+    $("#lang-tabs").innerHTML = `
+      <select id="lang-select" class="lang-select" aria-label="Language">
+        ${langs
+          .map(
+            (l) =>
+              `<option value="${l}" ${l === state.lang ? "selected" : ""}>${
+                l === "all" ? "All languages" : l
+              }</option>`
+          )
+          .join("")}
+      </select>`;
+    $("#lang-select").addEventListener("change", (e) => {
+      state.lang = e.target.value;
+      renderVoices();
+    });
+    return;
+  }
   $("#lang-tabs").innerHTML = langs
     .map((l) => {
       const label = l === "all" ? "All" : l;
@@ -222,10 +240,12 @@ function renderVoices() {
         v.lang.toLowerCase().includes(q) ||
         v.desc.toLowerCase().includes(q))
   );
+  const MAX_RENDER = 400;
   grid.innerHTML = list
+    .slice(0, MAX_RENDER)
     .map(
       (v, i) => `
-      <div class="voice-card ${v.name === state.voice ? "selected" : ""}" data-voice="${v.name}" style="animation-delay:${Math.min(i * 12, 200)}ms" tabindex="0">
+      <div class="voice-card ${v.name === state.voice ? "selected" : ""}" data-voice="${v.name}" style="animation-delay:${Math.min(i * 8, 150)}ms" tabindex="0">
         <button class="play" aria-label="Preview ${v.name}">${PLAY_SVG}${STOP_SVG}</button>
         <div class="v-info">
           <span class="v-name">${v.display}</span>
@@ -234,6 +254,12 @@ function renderVoices() {
       </div>`
     )
     .join("");
+  if (list.length > MAX_RENDER) {
+    grid.insertAdjacentHTML(
+      "beforeend",
+      `<div class="grid-note">Showing ${MAX_RENDER} of ${list.length} voices — search or pick a language to narrow down</div>`
+    );
+  }
 
   grid.querySelectorAll(".voice-card").forEach((card) => {
     card.addEventListener("click", () => selectVoice(card.dataset.voice));

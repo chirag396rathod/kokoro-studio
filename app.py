@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import io
 import json
 import os
 import re
@@ -89,7 +90,9 @@ QWEN_MODEL_ID = "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice"
 QWEN_ENABLED = os.environ.get("QWEN_ENABLED") == "1"
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-GEMINI_MODEL = "gemini-2.5-flash-preview-tts"
+GEMINI_MODEL = "gemini-3.8-flash-tts"
+GEMINI_VOICES_CACHE = CACHE_DIR / "gemini_voices.json"
+GEMINI_VOICES_MAX_AGE = 7 * 24 * 3600
 
 # speaker, style descriptor, gender — 30 prebuilt Gemini TTS voices
 GEMINI_VOICES = [
@@ -202,14 +205,57 @@ def qwen_meta(speaker: str, lang: str, desc: str, gender: str) -> dict:
     }
 
 
-def gemini_meta(speaker: str, style: str, gender: str) -> dict:
+def gemini_meta(v: dict) -> dict:
     return {
-        "name": speaker,
-        "display": speaker,
-        "lang": "Multilingual",
-        "gender": gender,
-        "desc": style,
+        "name": v["id"],
+        "display": v.get("display_name") or v["id"],
+        "lang": v.get("language_code", "en-US"),
+        "gender": (v.get("gender") or "?").capitalize(),
+        "desc": v.get("persona") or v.get("accent") or "",
     }
+
+
+def _fetch_gemini_voices() -> list:
+    voices, token = [], None
+    for _ in range(30):
+        url = "https://generativelanguage.googleapis.com/v1beta/voices?pageSize=200"
+        if token:
+            url += f"&pageToken={token}"
+        req = urllib.request.Request(url, headers={"x-goog-api-key": GEMINI_API_KEY})
+        data = json.loads(urllib.request.urlopen(req, timeout=60).read())
+        voices += data.get("voices", [])
+        token = data.get("next_page_token")
+        if not token:
+            return voices
+    return voices
+
+
+def get_gemini_voices() -> list:
+    if GEMINI_VOICES_CACHE.exists():
+        try:
+            blob = json.loads(GEMINI_VOICES_CACHE.read_text())
+            if time.time() - blob["ts"] < GEMINI_VOICES_MAX_AGE:
+                return blob["voices"]
+        except Exception:
+            pass
+    try:
+        voices = _fetch_gemini_voices()
+        GEMINI_VOICES_CACHE.write_text(
+            json.dumps({"ts": time.time(), "voices": voices})
+        )
+        return voices
+    except Exception:
+        # Offline fallback: the 30 studio voices
+        return [
+            {
+                "id": name,
+                "display_name": name,
+                "language_code": "en-US",
+                "gender": gender.lower(),
+                "persona": style,
+            }
+            for name, style, gender in GEMINI_VOICES
+        ]
 
 
 def check_engine(engine: str) -> str:
@@ -238,7 +284,7 @@ def check_voice(engine: str, voice: str) -> None:
         if voice not in {v[0] for v in QWEN_VOICES}:
             raise HTTPException(400, f"Unknown Qwen3 speaker '{voice}'")
     else:
-        if voice not in {v[0] for v in GEMINI_VOICES}:
+        if voice.lower() not in {v["id"].lower() for v in get_gemini_voices()}:
             raise HTTPException(400, f"Unknown Gemini voice '{voice}'")
 
 
@@ -299,7 +345,7 @@ def list_voices():
             "styles": True,
             "speed": False,
             "enabled": bool(GEMINI_API_KEY),
-            "voices": [gemini_meta(*v) for v in GEMINI_VOICES],
+            "voices": [gemini_meta(v) for v in get_gemini_voices()],
         }
     )
     return {"engines": engines}
@@ -352,11 +398,15 @@ def _gemini_synth(text: str, voice: str, instruct: str):
         raise HTTPException(502, f"Gemini API error: {detail}")
     try:
         part = data["candidates"][0]["content"]["parts"][0]["inlineData"]
-        rate = int(part.get("mimeType", "audio;rate=24000").split("rate=")[-1])
-        pcm = base64.b64decode(part["data"])
     except (KeyError, IndexError):
         raise HTTPException(502, f"Gemini returned no audio: {str(data)[:300]}")
-    samples = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
+    mime = part.get("mimeType", "")
+    raw = base64.b64decode(part["data"])
+    if "rate=" in mime:  # raw PCM (2.5 models)
+        rate = int(mime.split("rate=")[-1]) or 24000
+        samples = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+    else:  # container format, e.g. audio/wav (3.x models)
+        samples, rate = sf.read(io.BytesIO(raw), dtype="float32")
     return samples, rate
 
 
