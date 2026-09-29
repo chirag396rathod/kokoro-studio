@@ -146,7 +146,6 @@ function setEngine(id) {
   const chip = $("#voice-chip");
   chip.textContent = "No voice selected";
   chip.classList.remove("set");
-  const eng = curEngine();
   $("#instruct").classList.toggle("hidden", !eng.styles);
   $(".speed-box").classList.toggle("hidden", !eng.speed);
   $("#voice-search").value = "";
