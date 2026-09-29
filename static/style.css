@@ -216,6 +216,233 @@ button { font: inherit; color: inherit; }
   color: var(--muted);
 }
 
+/* ---------- Top tabs ---------- */
+
+.tabs-bar {
+  display: flex;
+  gap: 6px;
+  max-width: 1100px;
+  margin: 18px auto 0;
+  padding: 0 22px;
+}
+
+.tab-btn {
+  padding: 10px 22px;
+  border: 1px solid var(--border);
+  border-bottom: 0;
+  border-radius: 12px 12px 0 0;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.tab-btn:hover { color: var(--text); }
+
+.tab-btn.active {
+  background: var(--surface);
+  color: var(--accent-strong);
+  border-color: var(--border);
+}
+
+/* ---------- Video studio ---------- */
+
+.vs-select, .vs-file {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 13.5px;
+}
+
+.vs-select:focus, .vs-file:focus { border-color: var(--accent); outline: none; }
+
+.vs-or {
+  text-align: center;
+  font-size: 12px;
+  color: var(--muted);
+  margin: 10px 0;
+}
+
+.vs-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.vs-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.vs-thumbs {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.vs-thumb {
+  position: relative;
+  width: 110px;
+  animation: pop 0.2s ease both;
+}
+
+.vs-thumb img {
+  width: 110px;
+  height: 66px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  display: block;
+}
+
+.vs-num {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 6px;
+}
+
+.vs-thumb-actions {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.vs-thumb-actions button {
+  flex: 1;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 0;
+}
+
+.vs-thumb-actions button:hover:not(:disabled) { color: var(--accent-strong); border-color: var(--accent); }
+.vs-thumb-actions button:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.vs-progress {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.bar {
+  height: 10px;
+  border-radius: 99px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+#vs-bar {
+  height: 100%;
+  width: 0%;
+  border-radius: 99px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-strong));
+  transition: width 0.4s ease;
+}
+
+#vs-player {
+  flex: 1;
+  min-width: 260px;
+  width: 100%;
+  border-radius: 12px;
+  background: #000;
+}
+
+#tab-video .wide { grid-column: 1 / -1; }
+
+/* ---------- Emotion director ---------- */
+
+.emo-panel {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.emo-head { display: flex; align-items: center; gap: 10px; }
+.emo-head .link-btn { margin-left: auto; }
+
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 14px;
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-ghost:hover { background: var(--accent); color: #fff; }
+.btn-ghost:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-ghost svg { width: 14px; height: 14px; }
+
+.emo-segments {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.emo-row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  animation: pop 0.2s ease both;
+}
+
+.emo-row select {
+  flex: none;
+  width: 110px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.emo-row .emo-text {
+  flex: 1;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.emo-row[data-emo="Neutral"] .emo-text { color: var(--muted); }
+.emo-row:not([data-emo="Neutral"]) .emo-text {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
 /* ---------- Voice panel ---------- */
 
 #voice-search {

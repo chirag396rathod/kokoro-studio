@@ -6,6 +6,7 @@ import os
 import re
 import threading
 import time
+import shutil
 import urllib.request
 import uuid
 from contextlib import asynccontextmanager
@@ -14,12 +15,13 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from kokoro_onnx import Kokoro
+from video_studio import make_video, make_vn_pack
 
 BASE = Path(__file__).resolve().parent
 load_dotenv(BASE / ".env")
@@ -91,6 +93,25 @@ QWEN_ENABLED = os.environ.get("QWEN_ENABLED") == "1"
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 GEMINI_MODEL = "gemini-3.8-flash-tts"
+GEMINI_TEXT_MODEL = "gemini-3.8-flash"
+GEMINI_TEXT_FALLBACKS = ["gemini-3.8-flash", "gemini-3.5-flash", "gemini-2.5-flash"]
+
+# Fixed emotion palette: (name, voice instruction for the TTS model)
+EMOTIONS = [
+    ("Neutral", "Say in a neutral, natural tone"),
+    ("Happy", "Say cheerfully and happily"),
+    ("Excited", "Say with excitement and high energy"),
+    ("Sad", "Say in a sad, downbeat tone"),
+    ("Angry", "Say in an angry, irritated tone"),
+    ("Whisper", "Whisper this softly"),
+    ("Serious", "Say in a serious, firm tone"),
+    ("Calm", "Say in a calm, soothing tone"),
+    ("Fearful", "Say in a fearful, nervous tone"),
+    ("Surprised", "Say with surprise and amazement"),
+    ("Romantic", "Say in a warm, romantic tone"),
+    ("Dramatic", "Say dramatically, with intensity"),
+]
+EMOTION_MAP = dict(EMOTIONS)
 GEMINI_VOICES_CACHE = CACHE_DIR / "gemini_voices.json"
 GEMINI_VOICES_MAX_AGE = 7 * 24 * 3600
 
@@ -296,12 +317,63 @@ class VoiceReq(BaseModel):
     voice: str
 
 
+class Segment(BaseModel):
+    emotion: str = "Neutral"
+    text: str
+
+
 class GenerateReq(BaseModel):
     engine: str = "kokoro"
-    text: str
+    text: str = ""
+    segments: list[Segment] = []
     voice: str
     speed: float = 1.0
     instruct: str = ""
+
+
+class EnrichReq(BaseModel):
+    text: str
+
+
+class VideoJobManager:
+    def __init__(self, root: Path):
+        self.root = root
+        self.root.mkdir(parents=True, exist_ok=True)
+        self.jobs = {}
+
+    def create(self, audio_path: Path, images: list, script: str, options: dict) -> str:
+        job_id = f"{int(time.time())}_{uuid.uuid4().hex[:6]}"
+        job_dir = self.root / job_id
+        job_dir.mkdir()
+        names = []
+        for i, p in enumerate(images):
+            name = f"img_{i:02d}{p.suffix or '.jpg'}"
+            shutil.copyfile(p, job_dir / name)
+            names.append(name)
+        self.jobs[job_id] = {
+            "id": job_id, "stage": "Queued", "pct": 0, "done": False, "error": None,
+            "dir": job_dir, "audio": audio_path, "images": names,
+            "script": script, "options": options,
+        }
+        threading.Thread(target=self._run, args=(job_id,), daemon=True).start()
+        return job_id
+
+    def _run(self, job_id: str):
+        job = self.jobs[job_id]
+
+        def progress(stage: str, pct: int):
+            job["stage"], job["pct"] = stage, pct
+
+        try:
+            result = make_video(job["dir"], job["audio"], job["images"],
+                                job["script"], job["options"], progress)
+            job["done"], job["pct"] = True, 100
+            job["stage"] = f"Done — {result['scenes']} scenes, {result['duration']:.0f}s audio"
+        except Exception as e:
+            job["done"], job["error"] = True, str(e)[:300]
+
+
+video_mgr = VideoJobManager(OUT_DIR / "video_jobs")
 
 
 @app.get("/api/voices")
@@ -441,29 +513,58 @@ async def preview(req: VoiceReq):
 async def generate(req: GenerateReq):
     engine = check_engine(req.engine)
     check_voice(engine, req.voice)
-    text = req.text.strip()
-    if not text:
-        raise HTTPException(400, "Script is empty")
-    if len(text) > MAX_CHARS[engine]:
-        raise HTTPException(
-            400, f"Script too long for {engine} ({MAX_CHARS[engine]} characters max)"
-        )
 
-    if engine == "kokoro":
-        lang_code = LANG_META[req.voice[:3]][0]
-        speed = min(2.0, max(0.5, req.speed))
-        samples, sr = await asyncio.to_thread(
-            _kokoro_synth, text, req.voice, speed, lang_code
-        )
-    elif engine == "gemini":
-        instruct = req.instruct.strip()[:200]
-        samples, sr = await asyncio.to_thread(_gemini_synth, text, req.voice, instruct)
+    if req.segments:
+        if engine != "gemini":
+            raise HTTPException(
+                400, "Emotion segments work with the Gemini engine only"
+            )
+        parts, rates, total = [], set(), 0
+        for seg in req.segments:
+            seg_text = seg.text.strip()
+            if not seg_text:
+                continue
+            total += len(seg_text)
+            if total > MAX_CHARS["gemini"]:
+                raise HTTPException(
+                    400, f"Script too long ({MAX_CHARS['gemini']} characters max)"
+                )
+            instruction = EMOTION_MAP.get(seg.emotion.strip().capitalize(), "")
+            samples, sr = await asyncio.to_thread(
+                _gemini_synth, seg_text, req.voice, instruction
+            )
+            parts.append(samples)
+            rates.add(sr)
+        if not parts:
+            raise HTTPException(400, "Script is empty")
+        if len(rates) != 1:
+            raise HTTPException(502, "Mixed sample rates across segments")
+        samples, sr = np.concatenate(parts), rates.pop()
     else:
-        meta = next(v for v in QWEN_VOICES if v[0] == req.voice)
-        instruct = req.instruct.strip()[:200]
-        samples, sr = await asyncio.to_thread(
-            _qwen_synth, text, req.voice, meta[1], instruct
-        )
+        text = req.text.strip()
+        if not text:
+            raise HTTPException(400, "Script is empty")
+        if len(text) > MAX_CHARS[engine]:
+            raise HTTPException(
+                400, f"Script too long for {engine} ({MAX_CHARS[engine]} characters max)"
+            )
+        if engine == "kokoro":
+            lang_code = LANG_META[req.voice[:3]][0]
+            speed = min(2.0, max(0.5, req.speed))
+            samples, sr = await asyncio.to_thread(
+                _kokoro_synth, text, req.voice, speed, lang_code
+            )
+        elif engine == "gemini":
+            instruct = req.instruct.strip()[:200]
+            samples, sr = await asyncio.to_thread(
+                _gemini_synth, text, req.voice, instruct
+            )
+        else:
+            meta = next(v for v in QWEN_VOICES if v[0] == req.voice)
+            instruct = req.instruct.strip()[:200]
+            samples, sr = await asyncio.to_thread(
+                _qwen_synth, text, req.voice, meta[1], instruct
+            )
 
     fname = f"gen_{int(time.time())}_{uuid.uuid4().hex[:6]}_{engine}_{req.voice}.wav"
     sf.write(str(OUT_DIR / fname), samples, sr)
@@ -473,6 +574,185 @@ async def generate(req: GenerateReq):
         "voice": req.voice,
         "engine": engine,
     }
+
+
+def _gemini_text_call(prompt: str, json_mode: bool = False) -> str:
+    body = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"temperature": 0.3},
+    }
+    if json_mode:
+        body["generationConfig"]["responseMimeType"] = "application/json"
+    last_err = ""
+    for model in GEMINI_TEXT_FALLBACKS:
+        req = urllib.request.Request(
+            f"https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{model}:generateContent",
+            data=json.dumps(body).encode(),
+            headers={
+                "Content-Type": "application/json",
+                "x-goog-api-key": GEMINI_API_KEY,
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=240) as resp:
+                data = json.loads(resp.read())
+            return data["candidates"][0]["content"]["parts"][0]["text"]
+        except urllib.error.HTTPError as e:
+            detail = e.read().decode(errors="replace")[:300]
+            try:
+                detail = json.loads(detail)["error"]["message"]
+            except Exception:
+                pass
+            last_err = f"{model}: {detail}"
+            if e.code not in (503, 429, 500):
+                break  # non-retryable for this model class
+        except (TimeoutError, urllib.error.URLError, OSError) as e:
+            last_err = f"{model}: {e}"
+        except (KeyError, IndexError):
+            raise HTTPException(502, f"Gemini returned no text: {str(data)[:300]}")
+    raise HTTPException(502, f"Gemini API error: {last_err}")
+
+
+def _norm(s: str) -> str:
+    return " ".join(s.split()).lower()
+
+
+@app.get("/api/emotions")
+def list_emotions():
+    return {"emotions": [{"emotion": n, "instruction": i} for n, i in EMOTIONS]}
+
+
+@app.post("/api/enrich")
+async def enrich(req: EnrichReq):
+    if not GEMINI_API_KEY:
+        raise HTTPException(400, "Gemini TTS is disabled: set GEMINI_API_KEY in .env")
+    text = req.text.strip()
+    if not text:
+        raise HTTPException(400, "Script is empty")
+    if len(text) > MAX_CHARS["gemini"]:
+        raise HTTPException(400, f"Script too long ({MAX_CHARS['gemini']} characters max)")
+
+    allowed = ", ".join(n for n, _ in EMOTIONS)
+    prompt = (
+        "You are a voice director. Split the script below into segments and assign "
+        "an emotion to each segment.\n"
+        "STRICT RULES:\n"
+        f"1. Use ONLY these emotions: {allowed}.\n"
+        "2. NEVER add, remove, rewrite or fix any word. The concatenation of all "
+        "segment texts, in order, must reproduce the script EXACTLY, character for "
+        "character (including punctuation).\n"
+        "3. Split at natural emotional shifts (sentence or clause level). No empty "
+        "segments. First and last segments must cover the whole script.\n"
+        '4. Respond with JSON only: {"segments": [{"emotion": "...", "text": "..."}]}\n\n'
+        f"SCRIPT:\n{text}"
+    )
+
+    last_err = ""
+    for attempt in range(2):
+        raw = await asyncio.to_thread(_gemini_text_call, prompt, True)
+        try:
+            parsed = json.loads(raw)
+            segments = parsed["segments"]
+        except Exception:
+            last_err = "could not parse AI response"
+            continue
+        try:
+            out = []
+            for seg in segments:
+                emo = str(seg["emotion"]).strip().capitalize()
+                if emo not in EMOTION_MAP:
+                    raise ValueError(f"emotion '{seg['emotion']}' not allowed")
+                seg_text = str(seg["text"])
+                if not seg_text.strip():
+                    raise ValueError("empty segment")
+                out.append({"emotion": emo, "text": seg_text})
+        except (KeyError, TypeError, ValueError) as e:
+            last_err = str(e)
+            continue
+        if _norm("".join(s["text"] for s in out)) != _norm(text):
+            last_err = "AI modified the script text"
+            prompt += (
+                "\n\nIMPORTANT: Your previous answer changed the script wording. "
+                "Copy the script text EXACTLY, splitting it without any edits."
+            )
+            continue
+        return {"segments": out, "model": GEMINI_TEXT_MODEL}
+    raise HTTPException(502, f"Emotion analysis failed: {last_err}")
+
+
+@app.get("/api/audio/library")
+def audio_library():
+    files = sorted(OUT_DIR.glob("*.wav"), key=lambda p: p.stat().st_mtime, reverse=True)
+    return [{"name": p.name, "url": f"/audio_out/{p.name}"} for p in files[:30]]
+
+
+@app.post("/api/video/build")
+async def video_build(
+    images: list[UploadFile] = File(...),
+    script: str = Form(""),
+    options: str = Form("{}"),
+    audio: UploadFile | None = File(None),
+    audio_id: str = Form(""),
+):
+    if not images or not images[0].filename:
+        raise HTTPException(400, "Upload at least one image")
+    try:
+        opts = json.loads(options or "{}")
+    except json.JSONDecodeError:
+        raise HTTPException(400, "Invalid options")
+
+    if audio and audio.filename:
+        suffix = Path(audio.filename).suffix or ".mp3"
+        audio_path = OUT_DIR / f"upload_{int(time.time())}{suffix}"
+        audio_path.write_bytes(await audio.read())
+    elif audio_id:
+        audio_path = OUT_DIR / Path(audio_id).name
+        if not audio_path.exists():
+            raise HTTPException(400, "Selected library audio no longer exists")
+    else:
+        raise HTTPException(400, "Provide an audio file or pick one from the library")
+
+    tmp_images = []
+    for img in images:
+        suffix = Path(img.filename).suffix or ".jpg"
+        p = OUT_DIR / f"upimg_{uuid.uuid4().hex[:8]}{suffix}"
+        p.write_bytes(await img.read())
+        tmp_images.append(p)
+    if not tmp_images:
+        raise HTTPException(400, "No readable images")
+
+    job_id = video_mgr.create(audio_path, tmp_images, script, opts)
+    return {"job_id": job_id}
+
+
+@app.get("/api/video/status/{job_id}")
+def video_status(job_id: str):
+    job = video_mgr.jobs.get(job_id)
+    if not job:
+        raise HTTPException(404, "Unknown job")
+    return {
+        "stage": job["stage"], "pct": job["pct"],
+        "done": job["done"], "error": job["error"],
+    }
+
+
+@app.get("/api/video/download/{job_id}")
+def video_download(job_id: str):
+    job = video_mgr.jobs.get(job_id)
+    if not job or not job["done"] or job["error"]:
+        raise HTTPException(404, "Video not ready")
+    return FileResponse(job["dir"] / "story.mp4", media_type="video/mp4", filename="story.mp4")
+
+
+@app.get("/api/video/vnpack/{job_id}")
+def video_vnpack(job_id: str):
+    job = video_mgr.jobs.get(job_id)
+    if not job or not job["done"] or job["error"]:
+        raise HTTPException(404, "Video not ready")
+    zpath = make_vn_pack(job["dir"])
+    return FileResponse(zpath, media_type="application/zip", filename="vn_pack.zip")
 
 
 app.mount("/cache", StaticFiles(directory=CACHE_DIR), name="cache")

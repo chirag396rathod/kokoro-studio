@@ -8,7 +8,8 @@ A fast, offline text-to-speech web studio with **two engines** powered by open-s
 ## Features
 
 - **Script input** — drag & drop a `.txt` file or paste text, with live character/word counts
-- **Engine switcher** — pick Kokoro (54 voices, fast) or Qwen3-TTS 0.6B (9 speakers, more expressive)
+- **Story Video Studio** — upload story images + any voiceover (or pick one you generated), and get a fully edited YouTube-ready MP4: Ken Burns motion on every scene, fades between cuts, burned-in pop captions, 16:9 / 9:16 / 1:1, 720p–1080p
+- **VN export pack** — per-segment WAVs + timed `captions.srt` + timing sheet for polishing in VN Video Editor
 - **Voice previews** — filter by language tab, search by name, audition any voice with one click (samples are cached for instant replay)
 - **Style instructions** — Qwen3 voices accept natural-language direction, e.g. *"speak in a very excited tone"*
 - **Speed control** — 0.5x to 2x playback speed (Kokoro)
@@ -97,6 +98,7 @@ Downloaded automatically from Hugging Face on first use (~2.5 GB with the speech
 
 ```
 ├── app.py              # FastAPI server (model loads once, synthesis in threadpool)
+├── video_studio.py     # Local story-video renderer (FFmpeg: Ken Burns, fades, ASS captions)
 ├── download_models.py  # One-time model file downloader
 ├── test_kokoro.py      # CLI sanity check
 ├── static/

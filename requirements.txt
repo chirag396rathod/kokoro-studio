@@ -1,5 +1,5 @@
-kokoro-onnx>=0.6.1
-soundfile>=0.14.0
-fastapi>=0.115.0
-uvicorn[standard]>=0.30.0
-qwen-tts>=0.1.0
+fastapi==0.141.1
+imageio-ffmpeg==0.6.0
+kokoro-onnx==0.6.1
+soundfile==0.14.0
+uvicorn==0.54.0

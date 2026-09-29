@@ -19,6 +19,8 @@ const state = {
   previewVoice: null,
   previewBtn: null,
   generating: false,
+  emotions: [],
+  segments: null,
 };
 
 const curEngine = () => state.engines.find((e) => e.id === state.engine);
@@ -52,6 +54,13 @@ function updateCounter() {
   const t = scriptEl.value;
   const words = t.trim() ? t.trim().split(/\s+/).length : 0;
   $("#counter").textContent = `${t.length} chars · ${words} words`;
+  if (state.segments) {
+    state.segments = null;
+    emoSegments.classList.add("hidden");
+    emoSegments.innerHTML = "";
+    $("#emo-clear").classList.add("hidden");
+    emoStatus.textContent = "Script edited — re-run Add emotions";
+  }
   refreshGenerate();
 }
 scriptEl.addEventListener("input", updateCounter);
@@ -59,6 +68,7 @@ scriptEl.addEventListener("input", updateCounter);
 $("#clear-btn").addEventListener("click", () => {
   scriptEl.value = "";
   updateCounter();
+  clearSegments();
 });
 
 $("#sample-btn").addEventListener("click", () => {
@@ -66,6 +76,88 @@ $("#sample-btn").addEventListener("click", () => {
   updateCounter();
   scriptEl.focus();
 });
+
+/* ---------- Emotion director ---------- */
+
+const emoBtn = $("#emo-btn");
+const emoStatus = $("#emo-status");
+const emoSegments = $("#emo-segments");
+
+async function loadEmotions() {
+  try {
+    const res = await fetch("/api/emotions");
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    state.emotions = (await res.json()).emotions.map((e) => e.emotion);
+  } catch {
+    state.emotions = [];
+  }
+}
+
+function clearSegments() {
+  state.segments = null;
+  emoSegments.classList.add("hidden");
+  emoSegments.innerHTML = "";
+  $("#emo-clear").classList.add("hidden");
+  emoStatus.textContent = "";
+  refreshGenerate();
+}
+
+function renderSegments() {
+  emoSegments.innerHTML = state.segments
+    .map(
+      (s, i) => `
+      <div class="emo-row" data-emo="${s.emotion}">
+        <select data-i="${i}" aria-label="Emotion for segment ${i + 1}">
+          ${state.emotions
+            .map(
+              (e) =>
+                `<option ${e === s.emotion ? "selected" : ""}>${e}</option>`
+            )
+            .join("")}
+        </select>
+        <div class="emo-text">${s.text}</div>
+      </div>`
+    )
+    .join("");
+  emoSegments.querySelectorAll("select").forEach((sel) =>
+    sel.addEventListener("change", () => {
+      state.segments[+sel.dataset.i].emotion = sel.value;
+      sel.closest(".emo-row").dataset.emo = sel.value;
+    })
+  );
+}
+
+emoBtn.addEventListener("click", async () => {
+  const text = scriptEl.value.trim();
+  if (!text) return toast("Add your script first", "error");
+
+  emoBtn.disabled = true;
+  emoStatus.textContent = "Voice director is analyzing the script…";
+  try {
+    const res = await fetch("/api/enrich", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+    if (!res.ok) throw new Error((await res.json()).detail || "Analysis failed");
+    const data = await res.json();
+    state.segments = data.segments;
+    renderSegments();
+    emoSegments.classList.remove("hidden");
+    $("#emo-clear").classList.remove("hidden");
+    const used = new Set(data.segments.map((s) => s.emotion));
+    emoStatus.textContent = `${data.segments.length} segments · emotions: ${[...used].join(", ")} · script unchanged`;
+    toast("Emotions added — review and generate", "ok");
+  } catch (err) {
+    emoStatus.textContent = "";
+    toast(err.message, "error");
+  } finally {
+    emoBtn.disabled = false;
+    refreshGenerate();
+  }
+});
+
+$("#emo-clear").addEventListener("click", clearSegments);
 
 /* Upload */
 
@@ -353,15 +445,18 @@ $("#speed").addEventListener("input", () => {
 
 genBtn.addEventListener("click", async () => {
   const text = scriptEl.value.trim();
+  const hasSegments = !!state.segments;
   if (!text) return toast("Add your script first", "error");
   if (!state.voice) return toast("Pick a voice", "error");
+  if (hasSegments && state.engine !== "gemini")
+    return toast("Switch to the Gemini engine to use emotion segments", "error");
 
   state.generating = true;
   refreshGenerate();
   genBtn.classList.add("busy");
   const label = genBtn.querySelector(".btn-label");
   const t0 = Date.now();
-  label.textContent = "Synthesizing…";
+  label.textContent = hasSegments ? "Directing emotions…" : "Synthesizing…";
 
   try {
     const res = await fetch("/api/generate", {
@@ -370,6 +465,7 @@ genBtn.addEventListener("click", async () => {
       body: JSON.stringify({
         engine: state.engine,
         text,
+        segments: hasSegments ? state.segments : [],
         voice: state.voice,
         speed: +$("#speed").value,
         instruct: $("#instruct").value.trim(),
@@ -400,3 +496,4 @@ genBtn.addEventListener("click", async () => {
 
 $("#voice-grid").innerHTML = Array.from({ length: 8 }, () => '<div class="skeleton"></div>').join("");
 loadVoices();
+loadEmotions();

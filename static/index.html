@@ -22,6 +22,12 @@
     </button>
   </header>
 
+  <nav class="tabs-bar">
+    <button class="tab-btn active" data-tab="tts">TTS Studio</button>
+    <button class="tab-btn" data-tab="video">Video Studio</button>
+  </nav>
+
+  <div id="tab-tts">
   <main class="layout">
     <section class="card">
       <div class="card-head">
@@ -39,6 +45,17 @@
       <div class="meta-row">
         <span id="counter">0 chars · 0 words</span>
         <span id="drop-hint" class="hint"></span>
+      </div>
+      <div class="emo-panel">
+        <div class="emo-head">
+          <button id="emo-btn" class="btn-ghost">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.9 5.7L19.6 9l-5.7 1.9L12 16.6l-1.9-5.7L4.4 9l5.7-1.3L12 2zm7 12l.9 2.7 2.7.9-2.7.9-.9 2.7-.9-2.7-2.7-.9 2.7-.9.9-2.7z"/></svg>
+            Add emotions (AI)
+          </button>
+          <span id="emo-status" class="hint"></span>
+          <button id="emo-clear" class="link-btn hidden">Remove</button>
+        </div>
+        <div id="emo-segments" class="emo-segments hidden"></div>
       </div>
     </section>
 
@@ -78,9 +95,91 @@
       <span class="btn-label">Generate audio</span>
     </button>
   </footer>
+  </div>
+
+  <div id="tab-video" class="hidden">
+    <main class="layout">
+      <section class="card">
+        <div class="card-head"><h2><span class="step">1</span> Voiceover audio</h2></div>
+        <select id="vs-audio-select" class="vs-select" aria-label="Pick generated audio"></select>
+        <div class="vs-or">— or upload your own —</div>
+        <input id="vs-audio-file" type="file" accept="audio/*" class="vs-file">
+        <button id="vs-audio-refresh" class="link-btn">Refresh library</button>
+      </section>
+
+      <section class="card">
+        <div class="card-head"><h2><span class="step">2</span> Style</h2></div>
+        <div class="vs-grid">
+          <label>Aspect
+            <select id="vs-ratio" class="vs-select">
+              <option value="16:9" selected>16:9 YouTube</option>
+              <option value="9:16">9:16 Shorts</option>
+              <option value="1:1">1:1 Square</option>
+            </select>
+          </label>
+          <label>Quality
+            <select id="vs-res" class="vs-select">
+              <option value="720" selected>720p (fast)</option>
+              <option value="1080">1080p (HD)</option>
+            </select>
+          </label>
+          <label>Cuts
+            <select id="vs-transition" class="vs-select">
+              <option value="fade" selected>Fade to black</option>
+              <option value="crossfade">Smooth crossfade</option>
+              <option value="cut">Hard cut</option>
+            </select>
+          </label>
+          <label>Captions
+            <select id="vs-captions" class="vs-select">
+              <option value="on" selected>Burned-in pop</option>
+              <option value="off">None</option>
+            </select>
+          </label>
+        </div>
+      </section>
+
+      <section class="card wide">
+        <div class="card-head">
+          <h2><span class="step">3</span> Story images</h2>
+          <span class="hint">order = scene order · images cycle if fewer than scenes</span>
+        </div>
+        <div id="vs-drop" class="dropzone" tabindex="0">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+          <p>Drop story images here, or <button id="vs-browse" class="link-btn">browse</button></p>
+        </div>
+        <div id="vs-thumbs" class="vs-thumbs"></div>
+      </section>
+
+      <section class="card wide">
+        <div class="card-head">
+          <h2><span class="step">4</span> Caption script</h2>
+          <span class="hint">optional — powers burned-in captions</span>
+        </div>
+        <textarea id="vs-script" rows="4" placeholder="Paste the narration script (same text as the audio)…" spellcheck="false"></textarea>
+      </section>
+
+      <section class="card wide">
+        <button id="vs-create" class="btn-primary">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7" fill="currentColor" stroke="none"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+          Create video
+        </button>
+        <div id="vs-progress-wrap" class="vs-progress hidden">
+          <div class="bar"><div id="vs-bar"></div></div>
+          <span id="vs-stage" class="hint">Queued…</span>
+        </div>
+        <div id="vs-result" class="result-row hidden">
+          <video id="vs-player" controls></video>
+          <a id="vs-dl" class="btn-secondary" download>Download MP4</a>
+          <a id="vs-vn" class="btn-secondary" download>VN pack (ZIP)</a>
+        </div>
+      </section>
+    </main>
+  </div>
 
   <div id="toasts" aria-live="assertive"></div>
   <input type="file" id="file-input" accept=".txt,text/plain" hidden>
   <script src="app.js"></script>
+  <script src="video.js"></script>
 </body>
 </html>
