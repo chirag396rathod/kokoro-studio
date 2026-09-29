@@ -2,6 +2,9 @@
 *.onnx
 *.bin
 
+# Secrets
+.env
+
 # Runtime output
 cache/
 audio_out/

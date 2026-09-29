@@ -1,13 +1,18 @@
 import asyncio
+import base64
+import json
 import os
 import re
 import threading
 import time
+import urllib.request
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import numpy as np
 import soundfile as sf
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -16,6 +21,7 @@ from pydantic import BaseModel
 from kokoro_onnx import Kokoro
 
 BASE = Path(__file__).resolve().parent
+load_dotenv(BASE / ".env")
 CACHE_DIR = BASE / "cache"
 OUT_DIR = BASE / "audio_out"
 CACHE_DIR.mkdir(exist_ok=True)
@@ -23,7 +29,7 @@ OUT_DIR.mkdir(exist_ok=True)
 
 MODEL_PATH = BASE / "kokoro-v1.0.onnx"
 VOICES_PATH = BASE / "voices-v1.0.bin"
-MAX_CHARS = {"kokoro": 8000, "qwen3": 2000}
+MAX_CHARS = {"kokoro": 8000, "qwen3": 2000, "gemini": 6000}
 
 # ---------------------------------------------------------------- engines
 
@@ -82,6 +88,28 @@ QWEN_MODEL_ID = "Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice"
 # ~250x real-time on CPU, which is unusable. Set QWEN_ENABLED=1 to expose it.
 QWEN_ENABLED = os.environ.get("QWEN_ENABLED") == "1"
 
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+GEMINI_MODEL = "gemini-2.5-flash-preview-tts"
+
+# speaker, style descriptor, gender — 30 prebuilt Gemini TTS voices
+GEMINI_VOICES = [
+    ("Zephyr", "Bright", "Female"), ("Puck", "Upbeat", "Male"),
+    ("Charon", "Informative", "Male"), ("Kore", "Firm", "Female"),
+    ("Fenrir", "Excitable", "Male"), ("Leda", "Youthful", "Female"),
+    ("Orus", "Firm", "Male"), ("Aoede", "Breezy", "Female"),
+    ("Callirrhoe", "Easy-going", "Female"), ("Autonoe", "Bright", "Female"),
+    ("Enceladus", "Breathy", "Male"), ("Iapetus", "Clear", "Male"),
+    ("Umbriel", "Easy-going", "Male"), ("Algieba", "Smooth", "Male"),
+    ("Despina", "Smooth", "Female"), ("Erinome", "Clear", "Female"),
+    ("Algenib", "Gravelly", "Male"), ("Rasalgethi", "Informative", "Male"),
+    ("Laomedeia", "Upbeat", "Female"), ("Achernar", "Soft", "Female"),
+    ("Alnilam", "Firm", "Male"), ("Schedar", "Even", "Male"),
+    ("Gacrux", "Mature", "Female"), ("Pulcherrima", "Forward", "Female"),
+    ("Achird", "Friendly", "Male"), ("Zubenelgenubi", "Casual", "Male"),
+    ("Vindemiatrix", "Gentle", "Female"), ("Sadachbia", "Lively", "Male"),
+    ("Sadaltager", "Knowledgeable", "Male"), ("Sulafat", "Warm", "Female"),
+]
+
 SAMPLES = {
     "kokoro": {
         "en-us": "Hi there! This is how I sound. Not bad for a tiny model, right?",
@@ -105,6 +133,7 @@ SAMPLES = {
 ENGINES = {
     "kokoro": {"label": "Kokoro 82M", "styles": False, "speed": True},
     "qwen3": {"label": "Qwen3-TTS 0.6B", "styles": True, "speed": False},
+    "gemini": {"label": "Gemini TTS", "styles": True, "speed": False},
 }
 
 # ---------------------------------------------------------------- loaders
@@ -173,6 +202,16 @@ def qwen_meta(speaker: str, lang: str, desc: str, gender: str) -> dict:
     }
 
 
+def gemini_meta(speaker: str, style: str, gender: str) -> dict:
+    return {
+        "name": speaker,
+        "display": speaker,
+        "lang": "Multilingual",
+        "gender": gender,
+        "desc": style,
+    }
+
+
 def check_engine(engine: str) -> str:
     if engine not in ENGINES:
         raise HTTPException(400, f"Unknown engine '{engine}'")
@@ -182,6 +221,12 @@ def check_engine(engine: str) -> str:
             "Qwen3-TTS is disabled on this machine (needs an NVIDIA GPU to be "
             "practical). Start the server with QWEN_ENABLED=1 to force it.",
         )
+    if engine == "gemini" and not GEMINI_API_KEY:
+        raise HTTPException(
+            400,
+            "Gemini TTS is disabled: set GEMINI_API_KEY in the .env file "
+            "(free key at https://aistudio.google.com/apikey).",
+        )
     return engine
 
 
@@ -189,9 +234,12 @@ def check_voice(engine: str, voice: str) -> None:
     if engine == "kokoro":
         if not re.fullmatch(r"[a-z]{2}_[a-z]+", voice) or voice not in KOKORO_NAMES:
             raise HTTPException(400, f"Unknown Kokoro voice '{voice}'")
-    else:
+    elif engine == "qwen3":
         if voice not in {v[0] for v in QWEN_VOICES}:
             raise HTTPException(400, f"Unknown Qwen3 speaker '{voice}'")
+    else:
+        if voice not in {v[0] for v in GEMINI_VOICES}:
+            raise HTTPException(400, f"Unknown Gemini voice '{voice}'")
 
 
 # ---------------------------------------------------------------- api
@@ -244,6 +292,16 @@ def list_voices():
                 "voices": [qwen_meta(*v) for v in QWEN_VOICES],
             }
         )
+    engines.append(
+        {
+            "id": "gemini",
+            "label": ENGINES["gemini"]["label"],
+            "styles": True,
+            "speed": False,
+            "enabled": bool(GEMINI_API_KEY),
+            "voices": [gemini_meta(*v) for v in GEMINI_VOICES],
+        }
+    )
     return {"engines": engines}
 
 
@@ -260,6 +318,48 @@ def _qwen_synth(text: str, voice: str, lang: str, instruct: str):
     return wavs[0], sr
 
 
+def _gemini_synth(text: str, voice: str, instruct: str):
+    prompt = f"{instruct}: {text}" if instruct else text
+    body = json.dumps(
+        {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {
+                "responseModalities": ["AUDIO"],
+                "speechConfig": {
+                    "voiceConfig": {
+                        "prebuiltVoiceConfig": {"voiceName": voice}
+                    }
+                },
+            },
+        }
+    ).encode()
+    req = urllib.request.Request(
+        f"https://generativelanguage.googleapis.com/v1beta/models/"
+        f"{GEMINI_MODEL}:generateContent",
+        data=body,
+        headers={"Content-Type": "application/json", "x-goog-api-key": GEMINI_API_KEY},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=180) as resp:
+            data = json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode(errors="replace")[:300]
+        try:
+            detail = json.loads(detail)["error"]["message"]
+        except Exception:
+            pass
+        raise HTTPException(502, f"Gemini API error: {detail}")
+    try:
+        part = data["candidates"][0]["content"]["parts"][0]["inlineData"]
+        rate = int(part.get("mimeType", "audio;rate=24000").split("rate=")[-1])
+        pcm = base64.b64decode(part["data"])
+    except (KeyError, IndexError):
+        raise HTTPException(502, f"Gemini returned no audio: {str(data)[:300]}")
+    samples = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
+    return samples, rate
+
+
 @app.post("/api/preview")
 async def preview(req: VoiceReq):
     engine = check_engine(req.engine)
@@ -274,6 +374,9 @@ async def preview(req: VoiceReq):
         samples, sr = await asyncio.to_thread(
             _kokoro_synth, text, req.voice, 1.0, lang_code
         )
+    elif engine == "gemini":
+        text = "Hi there! This is how I sound. Pretty nice, right?"
+        samples, sr = await asyncio.to_thread(_gemini_synth, text, req.voice, "")
     else:
         meta = next(v for v in QWEN_VOICES if v[0] == req.voice)
         lang = meta[1]
@@ -302,6 +405,9 @@ async def generate(req: GenerateReq):
         samples, sr = await asyncio.to_thread(
             _kokoro_synth, text, req.voice, speed, lang_code
         )
+    elif engine == "gemini":
+        instruct = req.instruct.strip()[:200]
+        samples, sr = await asyncio.to_thread(_gemini_synth, text, req.voice, instruct)
     else:
         meta = next(v for v in QWEN_VOICES if v[0] == req.voice)
         instruct = req.instruct.strip()[:200]

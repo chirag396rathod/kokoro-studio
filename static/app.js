@@ -164,7 +164,7 @@ const STOP_SVG =
 const LANG_SHORT = {
   "English (US)": "US", "English (UK)": "UK", Spanish: "ES", French: "FR",
   Hindi: "HI", Italian: "IT", Japanese: "JA", "Portuguese (BR)": "BR",
-  Mandarin: "ZH", Chinese: "ZH", English: "EN", Korean: "KO",
+  Mandarin: "ZH", Chinese: "ZH", English: "EN", Korean: "KO", Multilingual: "24 lang",
 };
 
 async function loadVoices() {
