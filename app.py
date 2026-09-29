@@ -218,6 +218,7 @@ def list_voices():
             "label": ENGINES["kokoro"]["label"],
             "styles": False,
             "speed": True,
+            "enabled": True,
             "voices": [kokoro_meta(v) for v in KOKORO_NAMES],
         }
     ]
@@ -228,6 +229,18 @@ def list_voices():
                 "label": ENGINES["qwen3"]["label"],
                 "styles": True,
                 "speed": False,
+                "enabled": True,
+                "voices": [qwen_meta(*v) for v in QWEN_VOICES],
+            }
+        )
+    else:
+        engines.append(
+            {
+                "id": "qwen3",
+                "label": ENGINES["qwen3"]["label"],
+                "styles": True,
+                "speed": False,
+                "enabled": False,
                 "voices": [qwen_meta(*v) for v in QWEN_VOICES],
             }
         )

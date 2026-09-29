@@ -121,18 +121,23 @@ function renderEngines() {
     .map(
       (e) => `
       <button class="engine-btn ${e.id === state.engine ? "active" : ""}" role="tab"
-              data-engine="${e.id}" aria-selected="${e.id === state.engine}">
+              data-engine="${e.id}" aria-selected="${e.id === state.engine}"
+              ${e.enabled ? "" : 'disabled title="Needs an NVIDIA GPU — enable with QWEN_ENABLED=1"'}>
         ${e.label} <span class="count">${e.voices.length}</span>
+        ${e.enabled ? "" : '<span class="lock">GPU</span>'}
       </button>`
     )
     .join("");
   $("#engine-switch").querySelectorAll(".engine-btn").forEach((btn) =>
-    btn.addEventListener("click", () => setEngine(btn.dataset.engine))
+    btn.addEventListener("click", () => {
+      if (!btn.disabled) setEngine(btn.dataset.engine);
+    })
   );
 }
 
 function setEngine(id) {
-  if (state.engine === id) return;
+  const eng = state.engines.find((e) => e.id === id);
+  if (!eng || !eng.enabled || state.engine === id) return;
   if (state.audio) state.audio.pause();
   resetPreview();
   state.engine = id;

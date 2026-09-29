@@ -42,7 +42,7 @@ Qwen3-TTS runs through PyTorch and is **only practical on an NVIDIA GPU**:
   pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu126
   QWEN_ENABLED=1 python -m uvicorn app:app --host 127.0.0.1 --port 8000
   ```
-- **CPU / AMD GPUs (Windows)** — PyTorch has no CUDA support here; we measured ~250x real-time on a modern laptop CPU (bf16 emulation), i.e. a 10-second clip takes ~45 minutes, and DirectML (AMD) crashes on this model. The engine is therefore **auto-hidden** unless you explicitly set `QWEN_ENABLED=1`. Kokoro remains the default engine and is real-time everywhere.
+- **CPU / AMD GPUs (Windows)** — PyTorch has no CUDA support here; we measured ~250x real-time on a modern laptop CPU (bf16 emulation), i.e. a 10-second clip takes ~45 minutes, and DirectML (AMD) crashes on this model. The engine is therefore **shown greyed out** unless you explicitly set `QWEN_ENABLED=1`. Kokoro remains the default engine and is real-time everywhere.
 
 The Qwen3 model (~2.5 GB) downloads from Hugging Face on first use.
 
