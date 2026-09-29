@@ -366,6 +366,66 @@ button { font: inherit; color: inherit; }
 
 .hidden { display: none; }
 
+/* ---------- Engine switch ---------- */
+
+.engine-switch {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  margin-bottom: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-2);
+  width: fit-content;
+}
+
+.engine-btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.engine-btn:hover { color: var(--text); }
+
+.engine-btn.active {
+  background: var(--surface);
+  color: var(--accent-strong);
+  box-shadow: var(--shadow);
+}
+
+.engine-btn .count {
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 99px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+/* ---------- Instruct field ---------- */
+
+.instruct {
+  flex: 1;
+  min-width: 200px;
+  padding: 12px 16px;
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.instruct:focus { outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
+.instruct::placeholder { color: var(--muted); }
+
 /* ---------- Generate bar ---------- */
 
 .genbar {
@@ -488,5 +548,6 @@ button { font: inherit; color: inherit; }
   .genbar { flex-wrap: wrap; }
   .chip { flex-basis: 100%; order: -1; }
   .speed-box { margin-right: auto; }
+  .instruct { flex-basis: 100%; order: 2; }
   body { padding-bottom: 150px; }
 }

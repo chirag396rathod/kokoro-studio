@@ -11,7 +11,8 @@ const SAMPLE_SCRIPT =
   "and it just keeps judging my cheese intake.";
 
 const state = {
-  voices: [],
+  engines: [],
+  engine: "kokoro",
   voice: null,
   lang: "all",
   audio: null,
@@ -19,6 +20,8 @@ const state = {
   previewBtn: null,
   generating: false,
 };
+
+const curEngine = () => state.engines.find((e) => e.id === state.engine);
 
 /* ---------- Theme ---------- */
 
@@ -101,11 +104,8 @@ dropzone.addEventListener("keydown", (e) => {
     dropzone.classList.add("drag");
   })
 );
-["dragleave", "drop"].forEach((ev) =>
-  dropzone.addEventListener(ev, (e) => {
-    e.preventDefault();
-    dropzone.classList.remove("drag");
-  })
+["dragleave"].forEach((ev) =>
+  dropzone.addEventListener(ev, () => dropzone.classList.remove("drag"))
 );
 dropzone.addEventListener("drop", (e) => {
   e.preventDefault();
@@ -113,6 +113,43 @@ dropzone.addEventListener("drop", (e) => {
   const file = e.dataTransfer.files[0];
   if (file) readFile(file);
 });
+
+/* ---------- Engines ---------- */
+
+function renderEngines() {
+  $("#engine-switch").innerHTML = state.engines
+    .map(
+      (e) => `
+      <button class="engine-btn ${e.id === state.engine ? "active" : ""}" role="tab"
+              data-engine="${e.id}" aria-selected="${e.id === state.engine}">
+        ${e.label} <span class="count">${e.voices.length}</span>
+      </button>`
+    )
+    .join("");
+  $("#engine-switch").querySelectorAll(".engine-btn").forEach((btn) =>
+    btn.addEventListener("click", () => setEngine(btn.dataset.engine))
+  );
+}
+
+function setEngine(id) {
+  if (state.engine === id) return;
+  if (state.audio) state.audio.pause();
+  resetPreview();
+  state.engine = id;
+  state.voice = null;
+  state.lang = "all";
+  const chip = $("#voice-chip");
+  chip.textContent = "No voice selected";
+  chip.classList.remove("set");
+  const eng = curEngine();
+  $("#instruct").classList.toggle("hidden", !eng.styles);
+  $(".speed-box").classList.toggle("hidden", !eng.speed);
+  $("#voice-search").value = "";
+  renderEngines();
+  renderTabs();
+  renderVoices();
+  refreshGenerate();
+}
 
 /* ---------- Voices ---------- */
 
@@ -123,7 +160,7 @@ const STOP_SVG =
 const LANG_SHORT = {
   "English (US)": "US", "English (UK)": "UK", Spanish: "ES", French: "FR",
   Hindi: "HI", Italian: "IT", Japanese: "JA", "Portuguese (BR)": "BR",
-  Mandarin: "ZH",
+  Mandarin: "ZH", Chinese: "ZH", English: "EN", Korean: "KO",
 };
 
 async function loadVoices() {
@@ -131,7 +168,8 @@ async function loadVoices() {
   try {
     const res = await fetch("/api/voices");
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    state.voices = await res.json();
+    const data = await res.json();
+    state.engines = data.engines;
   } catch (err) {
     grid.innerHTML = "";
     toast(
@@ -145,12 +183,14 @@ async function loadVoices() {
     grid.appendChild(retry);
     return;
   }
+  renderEngines();
   renderTabs();
   renderVoices();
 }
 
 function renderTabs() {
-  const langs = ["all", ...new Set(state.voices.map((v) => v.lang))];
+  const voices = curEngine().voices;
+  const langs = ["all", ...new Set(voices.map((v) => v.lang))];
   $("#lang-tabs").innerHTML = langs
     .map((l) => {
       const label = l === "all" ? "All" : l;
@@ -169,10 +209,14 @@ function renderTabs() {
 function renderVoices() {
   const grid = $("#voice-grid");
   const q = $("#voice-search").value.trim().toLowerCase();
-  const list = state.voices.filter(
+  const list = curEngine().voices.filter(
     (v) =>
       (state.lang === "all" || v.lang === state.lang) &&
-      (!q || v.name.includes(q) || v.display.toLowerCase().includes(q) || v.lang.toLowerCase().includes(q))
+      (!q ||
+        v.name.toLowerCase().includes(q) ||
+        v.display.toLowerCase().includes(q) ||
+        v.lang.toLowerCase().includes(q) ||
+        v.desc.toLowerCase().includes(q))
   );
   grid.innerHTML = list
     .map(
@@ -181,7 +225,7 @@ function renderVoices() {
         <button class="play" aria-label="Preview ${v.name}">${PLAY_SVG}${STOP_SVG}</button>
         <div class="v-info">
           <span class="v-name">${v.display}</span>
-          <span class="v-sub">${LANG_SHORT[v.lang] || v.lang} · ${v.gender}</span>
+          <span class="v-sub">${LANG_SHORT[v.lang] || v.lang} · ${v.desc || v.gender}</span>
         </div>
       </div>`
     )
@@ -205,9 +249,9 @@ function selectVoice(name) {
   document.querySelectorAll(".voice-card").forEach((c) =>
     c.classList.toggle("selected", c.dataset.voice === name)
   );
-  const v = state.voices.find((x) => x.name === name);
+  const v = curEngine().voices.find((x) => x.name === name);
   const chip = $("#voice-chip");
-  chip.textContent = `${v.display} — ${v.lang} · ${v.gender}`;
+  chip.textContent = `${v.display} — ${curEngine().label} · ${v.desc || v.gender}`;
   chip.classList.add("set");
   refreshGenerate();
 }
@@ -250,7 +294,7 @@ async function preview(name, btn) {
     const res = await fetch("/api/preview", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ voice: name }),
+      body: JSON.stringify({ engine: state.engine, voice: name }),
     });
     if (!res.ok) throw new Error((await res.json()).detail || "Preview failed");
     const data = await res.json();
@@ -294,9 +338,11 @@ genBtn.addEventListener("click", async () => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        engine: state.engine,
         text,
         voice: state.voice,
         speed: +$("#speed").value,
+        instruct: $("#instruct").value.trim(),
       }),
     });
     if (!res.ok) throw new Error((await res.json()).detail || "Generation failed");
@@ -304,9 +350,9 @@ genBtn.addEventListener("click", async () => {
 
     $("#player").src = data.url;
     $("#download").href = data.url;
-    $("#download").download = `kokoro_${data.voice}.wav`;
+    $("#download").download = `${data.engine}_${data.voice}.wav`;
     $("#result-meta").textContent =
-      `${data.duration}s · ${data.voice} · ${((Date.now() - t0) / 1000).toFixed(1)}s to render`;
+      `${data.engine} · ${data.duration}s · rendered in ${((Date.now() - t0) / 1000).toFixed(1)}s`;
     $("#result").classList.remove("hidden");
     $("#result").scrollIntoView({ behavior: "smooth", block: "nearest" });
     toast(`Audio ready — ${data.duration}s`, "ok");

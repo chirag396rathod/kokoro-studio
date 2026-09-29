@@ -21,3 +21,5 @@ Thumbs.db
 
 # Demo output from test_kokoro.py
 funny_*.wav
+qwen_*.log
+qwen_device_test.wav

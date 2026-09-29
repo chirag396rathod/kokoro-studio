@@ -1,12 +1,17 @@
 # Kokoro Studio
 
-A fast, offline text-to-speech web studio powered by the [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) model. Paste or upload a script, audition **54 voices** across 9 languages, and generate studio-ready WAV audio — all on your own CPU.
+A fast, offline text-to-speech web studio with **two engines** powered by open-source models. Paste or upload a script, audition voices, and generate studio-ready WAV audio — all on your own machine.
+
+- **Kokoro 82M** — 54 voices across 9 languages, real-time on CPU ([hexgrad/Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M))
+- **Qwen3-TTS 0.6B (CustomVoice)** — 9 expressive speakers, 10 languages, natural-language **style instructions** ("speak in a very angry tone") ([QwenLM/Qwen3-TTS](https://github.com/QwenLM/Qwen3-TTS)). *Optional — requires an NVIDIA GPU to be practical; auto-hidden otherwise.*
 
 ## Features
 
 - **Script input** — drag & drop a `.txt` file or paste text, with live character/word counts
-- **54 neural voices** — filter by language tab, search by name, preview any voice with one click (samples are cached for instant replay)
-- **Speed control** — 0.5x to 2x playback speed
+- **Engine switcher** — pick Kokoro (54 voices, fast) or Qwen3-TTS 0.6B (9 speakers, more expressive)
+- **Voice previews** — filter by language tab, search by name, audition any voice with one click (samples are cached for instant replay)
+- **Style instructions** — Qwen3 voices accept natural-language direction, e.g. *"speak in a very excited tone"*
+- **Speed control** — 0.5x to 2x playback speed (Kokoro)
 - **Instant results** — inline audio player + one-click WAV download
 - **Runs 100% offline** — no API keys, no cloud, no telemetry
 - **Polished UI** — light/dark theme, responsive layout, accessible (keyboard + focus rings + ARIA)
@@ -19,7 +24,7 @@ Requires **Python 3.10–3.12**.
 # 1. Install dependencies
 pip install -r requirements.txt
 
-# 2. Download the model files (~352 MB, one time)
+# 2. Download the model files (~352 MB Kokoro, one time)
 python download_models.py
 
 # 3. Start the studio
@@ -27,6 +32,19 @@ python -m uvicorn app:app --host 127.0.0.1 --port 8000
 ```
 
 Open **http://127.0.0.1:8000** in your browser.
+
+### About the Qwen3-TTS engine
+
+Qwen3-TTS runs through PyTorch and is **only practical on an NVIDIA GPU**:
+
+- **NVIDIA GPU** — install the CUDA build of torch, then start the server with `QWEN_ENABLED=1`:
+  ```bash
+  pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu126
+  QWEN_ENABLED=1 python -m uvicorn app:app --host 127.0.0.1 --port 8000
+  ```
+- **CPU / AMD GPUs (Windows)** — PyTorch has no CUDA support here; we measured ~250x real-time on a modern laptop CPU (bf16 emulation), i.e. a 10-second clip takes ~45 minutes, and DirectML (AMD) crashes on this model. The engine is therefore **auto-hidden** unless you explicitly set `QWEN_ENABLED=1`. Kokoro remains the default engine and is real-time everywhere.
+
+The Qwen3 model (~2.5 GB) downloads from Hugging Face on first use.
 
 ### Sanity check (optional)
 
@@ -50,13 +68,29 @@ Voice names follow `<language><gender>_<name>`: `a` = American English, `b` = Br
 | Portuguese (BR) | pf_dora | pm_alex, pm_santa |
 | Mandarin | zf_xiaobei, zf_xiaoni, zf_xiaoxiao, zf_xiaoyi | zm_yunjian, zm_yunxi, zm_yunxia, zm_yunyang |
 
+## Qwen3-TTS speakers (9)
+
+Downloaded automatically from Hugging Face on first use (~2.5 GB with the speech tokenizer).
+
+| Speaker | Description | Native language |
+|---|---|---|
+| Vivian | Bright young female | Chinese |
+| Serena | Warm, gentle young female | Chinese |
+| Uncle_Fu | Seasoned male, mellow timbre | Chinese |
+| Dylan | Youthful Beijing male | Chinese (Beijing) |
+| Eric | Lively Chengdu male | Chinese (Sichuan) |
+| Ryan | Dynamic male with rhythm | English |
+| Aiden | Sunny American male | English |
+| Ono_Anna | Playful Japanese female | Japanese |
+| Sohee | Warm Korean female | Korean |
+
 ## API
 
 | Endpoint | Method | Body | Returns |
 |---|---|---|---|
-| `/api/voices` | GET | — | Voice catalog with language/gender metadata |
-| `/api/preview` | POST | `{"voice": "am_puck"}` | `{url, cached}` — cached 2s sample |
-| `/api/generate` | POST | `{"text", "voice", "speed"}` | `{url, duration, voice}` — rendered WAV |
+| `/api/voices` | GET | — | Engine catalog with per-engine voice metadata |
+| `/api/preview` | POST | `{"engine", "voice"}` | `{url, cached}` — cached sample |
+| `/api/generate` | POST | `{"engine", "text", "voice", "speed", "instruct"}` | `{url, duration, voice, engine}` |
 
 ## Project structure
 
